@@ -783,7 +783,82 @@
             return tex;
         }
 
-        // Volumetric Cosmic Deep-Space Nebula Cloud Texture
+        
+        // Developer Personal Identity Avatar Hologram Texture for Central Suns
+        const developerAvatarCache = new Map();
+        function createDeveloperAvatarTexture(avatarUrl, name, initials) {
+            const cacheKey = avatarUrl || initials || 'DEV';
+            if (developerAvatarCache.has(cacheKey)) return developerAvatarCache.get(cacheKey);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            function renderDefault() {
+                ctx.clearRect(0, 0, 512, 512);
+                const grad = ctx.createRadialGradient(256, 256, 170, 256, 256, 250);
+                grad.addColorStop(0, '#f59e0b');
+                grad.addColorStop(0.6, '#ea580c');
+                grad.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(256, 256, 250, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#0a0f1d';
+                ctx.beginPath();
+                ctx.arc(256, 256, 205, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.lineWidth = 12;
+                ctx.strokeStyle = '#fbbf24';
+                ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 120px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(initials || 'DEV', 256, 256);
+            }
+
+            renderDefault();
+            const texture = new THREE.CanvasTexture(canvas);
+
+            if (avatarUrl) {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    ctx.clearRect(0, 0, 512, 512);
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.arc(256, 256, 205, 0, Math.PI * 2);
+                    ctx.closePath();
+                    ctx.clip();
+                    ctx.drawImage(img, 46, 46, 420, 420);
+                    ctx.restore();
+
+                    ctx.lineWidth = 14;
+                    ctx.strokeStyle = '#fbbf24';
+                    ctx.beginPath();
+                    ctx.arc(256, 256, 205, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.lineWidth = 6;
+                    ctx.strokeStyle = 'rgba(245, 158, 11, 0.7)';
+                    ctx.beginPath();
+                    ctx.arc(256, 256, 230, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    texture.needsUpdate = true;
+                };
+                img.src = avatarUrl;
+            }
+
+            developerAvatarCache.set(cacheKey, texture);
+            return texture;
+        }
+
+// Volumetric Cosmic Deep-Space Nebula Cloud Texture
         function createNebulaCloudTexture(colorHex) {
             const canvas = document.createElement('canvas');
             canvas.width = 512;
@@ -1095,6 +1170,7 @@
             planetCloudsList: [],
             planetNightLights: [],
             sunFlares: [],
+            developerAvatarMeshes: [],
             nebulaCloudsList: [],
             activeExplosions: [],
             raycastables: [],
@@ -1278,12 +1354,46 @@
                 systemGroup.position.set(sysX, sysY, sysZ);
                 systemGroup.rotation.set(tiltX, tiltY, tiltZ);
 
-                // Central Star / Sun for this Solar System
+                // Central Star / Sun for this Solar System with Developer Personal Identity
                 const sunGroup = new THREE.Group();
                 const sunGeo = new THREE.SphereGeometry(11.0, 32, 32);
-                const sunMat = new THREE.MeshBasicMaterial({ color: theme.color });
+                const sunMat = new THREE.MeshBasicMaterial({ 
+                    color: theme.color,
+                    transparent: true,
+                    opacity: 0.65,
+                    blending: THREE.AdditiveBlending 
+                });
                 const sunCore = new THREE.Mesh(sunGeo, sunMat);
                 sunGroup.add(sunCore);
+
+                // Developer Personal Identity Hologram at the Fusion Core
+                const devInitials = (userData.name || userData.login || 'DEV').substring(0, 2).toUpperCase();
+                const devAvatarTex = createDeveloperAvatarTexture(userData.avatar_url, userData.name || userData.login, devInitials);
+                const avatarGeo = new THREE.PlaneGeometry(13.5, 13.5);
+                const avatarMat = new THREE.MeshBasicMaterial({
+                    map: devAvatarTex,
+                    transparent: true,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+                const avatarMesh = new THREE.Mesh(avatarGeo, avatarMat);
+                avatarMesh.position.set(0, 0, 0);
+                sunGroup.add(avatarMesh);
+
+                // Golden Cybernetic Energy Halo Ring around Developer Avatar
+                const haloGeo = new THREE.RingGeometry(15.5, 17.0, 64);
+                const haloMat = new THREE.MeshBasicMaterial({
+                    color: 0xf59e0b,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0.85,
+                    blending: THREE.AdditiveBlending
+                });
+                const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+                haloMesh.rotation.x = Math.PI / 2;
+                sunGroup.add(haloMesh);
+
+                appState.developerAvatarMeshes.push({ mesh: avatarMesh, halo: haloMesh });
 
                 const coronaGeo = new THREE.SphereGeometry(15.5, 32, 32);
                 const coronaMat = new THREE.MeshBasicMaterial({
@@ -1324,6 +1434,10 @@
                     isSun: true,
                     systemIndex: sysIdx + 1,
                     systemName: theme.name,
+                    developerName: userData.name || userData.login,
+                    developerLogin: userData.login,
+                    developerAvatar: userData.avatar_url,
+                    developerBio: userData.bio,
                     worldCenter: new THREE.Vector3(sysX, sysY, sysZ)
                 };
                 systemGroup.add(sunGroup);
@@ -1806,6 +1920,15 @@
                     flare.mesh.scale.set(s, s, s);
                 }
 
+                // Developer Personal Identity Avatars always face camera
+                for (let da = 0; da < appState.developerAvatarMeshes.length; da++) {
+                    const dObj = appState.developerAvatarMeshes[da];
+                    dObj.mesh.lookAt(camera.position);
+                    if (dObj.halo) {
+                        dObj.halo.rotation.z += 0.005;
+                    }
+                }
+
                 // Slow Drifting Volumetric Deep-Space Nebulae
                 for (let nb = 0; nb < appState.nebulaCloudsList.length; nb++) {
                     const neb = appState.nebulaCloudsList[nb];
@@ -1947,7 +2070,7 @@
                     text = `${r.name} - ${(r.stargazers_count || 0).toLocaleString()} Stars [${hit.userData.systemName}]`;
                 } else if (hit.parent?.userData?.isSun || hit.userData?.isSun) {
                     const sunData = hit.parent?.userData?.isSun ? hit.parent.userData : hit.userData;
-                    text = `Star: ${sunData.systemName} (Sector ${sunData.systemIndex})`;
+                    text = `☀️ Developer Core: ${sunData.developerName} (@${sunData.developerLogin}) • ${sunData.systemName} (Sector ${sunData.systemIndex})`;
                 }
 
                 if (text) {
@@ -1989,9 +2112,15 @@
                 } else if (hitObj.parent?.userData?.isSun || hitObj.userData?.isSun) {
                     const sunData = hitObj.parent?.userData?.isSun ? hitObj.parent.userData : hitObj.userData;
                     const targetPos = sunData.worldCenter.clone();
-                    const camPos = targetPos.clone().add(new THREE.Vector3(0, 160, 260));
+                    // Close-up cinematic zoom into Developer Core Sun
+                    const camPos = targetPos.clone().add(new THREE.Vector3(0, 18, 42));
                     gsapCameraTransition(camPos, targetPos);
-                    showToast(`Focused on ${sunData.systemName}`);
+                    showToast(`☀️ Developer Core: ${sunData.developerName} (@${sunData.developerLogin})`);
+                    // Open Developer Identity Portrait Card
+                    setTimeout(() => {
+                        const shareModal = document.getElementById('share-modal');
+                        if (shareModal) shareModal.classList.remove('hidden');
+                    }, 1200);
                 } else if (hitObj.userData.isPlanet || hitObj.parent?.userData?.isPlanet) {
                     const planetMesh = hitObj.userData.isPlanet ? hitObj : hitObj.parent;
                     selectPlanet(planetMesh);
